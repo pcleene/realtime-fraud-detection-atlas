@@ -1,0 +1,43 @@
+# =============================================================================
+# Production Terraform Variables
+# =============================================================================
+# Copy this file to prod.tfvars and fill in your values
+# Usage: terraform apply -var-file="prod.tfvars"
+# =============================================================================
+
+# AWS Configuration
+aws_region = "ap-southeast-1"  # Singapore - closest to Indonesia
+
+# MongoDB Atlas Configuration
+# Get these from Atlas: Organization Settings > Access Manager > API Keys
+mongodb_atlas_public_key  = "your-atlas-public-key"
+mongodb_atlas_private_key = "your-atlas-private-key"
+mongodb_atlas_project_id  = "your-atlas-project-id"
+
+# MongoDB connection string (will use PrivateLink once configured)
+# Format: mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<db>
+mongodb_connection_string = "mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<db>"
+
+# EC2 Configuration
+instance_type            = "c6i.16xlarge" # 64 vCPU, 128GB RAM (needed for V2 caches)
+api_instance_count       = 8              # Target for 50K TPS with V2
+api_workers_per_instance = 129            # 2 * 64 + 1
+key_pair_name            = "your-key-pair-name"
+
+# Auto Scaling
+min_instances            = 4               # Minimum viable for V2 (~25K TPS)
+max_instances            = 12              # Headroom for spikes
+scale_up_cpu_threshold   = 70
+scale_down_cpu_threshold = 30
+
+# V2 Configuration
+enable_v2           = true
+docker_image_tag_v2 = "latest"
+
+# Tags
+tags = {
+  Project     = "RegionalBank-fraud-detection"
+  Environment = "prod"
+  ManagedBy   = "terraform"
+  CostCenter  = "fraud-detection-poc"
+}

@@ -1,0 +1,76 @@
+version: '3.8'
+
+# Docker Compose for EC2/K8s deployment
+# MongoDB is on Atlas (connected via PrivateLink)
+#
+# Production deployment options:
+#   1. Single instance: docker-compose up -d
+#   2. Scaled API: docker-compose up -d --scale api=3
+#   3. High-perf: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  # ============================================
+  # API Server (Gunicorn + Uvicorn workers)
+  # ============================================
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    dns:
+      - <private-ip>
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - DB_NAME=${DB_NAME:-RegionalBank_fraud}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Worker configuration for production
+      # Formula: 2 * CPUs + 1 = 2 * 8 + 1 = 17 workers
+      - WORKERS=${WORKERS:-17}
+      - WORKER_CONNECTIONS=${WORKER_CONNECTIONS:-1000}
+      - TIMEOUT=${TIMEOUT:-120}
+      # Locust proxy configuration
+      - LOCUST_HOST=${LOCUST_HOST:-localhost}
+      - LOCUST_PORT=${LOCUST_PORT:-8089}
+      - LOCUST_BASTION_HOST=${LOCUST_BASTION_HOST:-<private-ip>}
+    volumes:
+      - ./certs:/app/certs:ro
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '28'
+          memory: 50G
+        reservations:
+          cpus: '16'
+          memory: 32G
+
+  # ============================================
+  # Frontend
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - PUBLIC_API_URL=http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M

@@ -1,0 +1,64 @@
+version: '3.8'
+
+# Docker Compose for V2 API deployment
+# MongoDB is on Atlas (connected via PrivateLink)
+#
+# V2 runs on port 8001, uses RegionalBank_fraud_v2 database
+#
+# Usage (V2 only):
+#   docker compose -f docker-compose.v2.yml up -d
+# Usage (V1 + V2 on c6i.16xlarge):
+#   docker compose -f docker-compose.yml -f docker-compose.v2.yml up -d
+#
+# Resource limits below are for c6i.16xlarge (64 vCPU, 128GB).
+# When running V1 + V2 together, V1 gets 28 CPUs / 50G and V2 gets 28 CPUs / 65G.
+# When running V2 only, override cpus to '60' and memory to '120G'.
+
+services:
+  # ============================================
+  # V2 API Server (Gunicorn + Uvicorn workers)
+  # ============================================
+  api-v2:
+    build:
+      context: ./backend_v2
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    dns:
+      - <private-ip>
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - DB_NAME=${DB_NAME_V2:-RegionalBank_fraud_v2}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Worker configuration: set WORKERS in .env based on allocated CPUs
+      # c6i.16xlarge with V1+V2: 28 CPUs → WORKERS=57 (2*28+1)
+      # c6i.16xlarge V2-only:    60 CPUs → WORKERS=121 (2*60+1)
+      - WORKERS=${WORKERS:-17}
+      - WORKER_CONNECTIONS=${WORKER_CONNECTIONS:-1000}
+      - TIMEOUT=${TIMEOUT:-120}
+      - BIND_PORT=8001
+      # Locust proxy configuration
+      - LOCUST_HOST=${LOCUST_HOST:-localhost}
+      - LOCUST_PORT=${LOCUST_PORT:-8089}
+      - LOCUST_BASTION_HOST=${LOCUST_BASTION_HOST:-<private-ip>}
+    volumes:
+      - ./certs:/app/certs:ro
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '28'
+          memory: 65G
+        reservations:
+          cpus: '16'
+          memory: 32G
